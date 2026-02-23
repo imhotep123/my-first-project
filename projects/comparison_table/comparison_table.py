@@ -106,6 +106,9 @@ def create_comparison_table(old_path, new_path, comment_path, output_path):
         doc_end.Collapse(0)  # wdCollapseEnd = 0
         table = doc_out.Tables.Add(doc_end, 2, 3)
         table.AllowAutoFit = False
+        # 表全体の幅をページ内有効幅に固定（はみ出し防止）
+        table.PreferredWidthType = 3  # wdPreferredWidthPoints
+        table.PreferredWidth = available_width_pt
 
         print("列幅設定中...")
         table.Columns(1).Width = left_mid_col_width
@@ -133,6 +136,12 @@ def create_comparison_table(old_path, new_path, comment_path, output_path):
         comment_rng = table.Cell(2, 3).Range
         comment_rng.Font.Name = "MS Pゴシック"
         comment_rng.Font.Size = 8
+
+        print("段落後の間隔を削除中...")
+        # 全セルの全段落に SpaceAfter=0 を設定
+        for row in range(1, 3):
+            for col in range(1, 4):
+                table.Cell(row, col).Range.ParagraphFormat.SpaceAfter = 0
 
         print(f"保存中: {output_abs}")
         doc_out.SaveAs2(output_abs, FileFormat=WD_FORMAT_XML_DOCUMENT)
