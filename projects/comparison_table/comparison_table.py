@@ -150,13 +150,12 @@ def create_comparison_table(old_path, new_path, comment_path, output_path):
         print("  → 完了")
 
         print("コンテンツ行の書式設定中...")
-        # 参照ファイル準拠
-        # 左列・中列: ＭＳ 明朝 10pt・行間12pt固定・段落後0pt
+        # 左列・中列: 段落間隔・行間のみ設定
+        # Font.Name / Font.Size は設定しない
+        # → Range 全体への Font 適用は消し線・アンダーライン等の文字修飾を上書きするため
         WD_LINE_SPACE_EXACTLY = 4
         for col in (1, 2):
             rng = table.Cell(2, col).Range
-            rng.Font.Name = "ＭＳ 明朝"
-            rng.Font.Size = 10
             rng.ParagraphFormat.LineSpacingRule = WD_LINE_SPACE_EXACTLY
             rng.ParagraphFormat.LineSpacing = 12
             rng.ParagraphFormat.SpaceBefore = 0
