@@ -74,18 +74,21 @@ def create_comparison_table(old_path, new_path, comment_path, output_path):
         doc_out = word.Documents.Add()
 
         print("ページ設定中（A4横向き）...")
+        # 1cm = 28.3465pt
+        # ・PaperSize で用紙サイズを指定してから Orientation を変更する
+        # ・CentimetersToPoints() は COM 呼び出しのため手動計算に置き換え
+        CM = 28.3465
+
         ps = doc_out.PageSetup
+        ps.PaperSize = 9          # wdPaperA4
         ps.Orientation = WD_ORIENT_LANDSCAPE
-        ps.PageWidth = word.CentimetersToPoints(29.7)
-        ps.PageHeight = word.CentimetersToPoints(21.0)
-        ps.TopMargin = word.CentimetersToPoints(2.0)
-        ps.BottomMargin = word.CentimetersToPoints(2.0)
-        ps.LeftMargin = word.CentimetersToPoints(2.0)
-        ps.RightMargin = word.CentimetersToPoints(2.0)
+        ps.TopMargin = 2.0 * CM
+        ps.BottomMargin = 2.0 * CM
+        ps.LeftMargin = 2.0 * CM
+        ps.RightMargin = 2.0 * CM
 
         # 利用可能幅 = 29.7 - 2*2 = 25.7cm を 3 等分
-        available_width_pt = word.CentimetersToPoints(25.7)
-        col_width = available_width_pt / 3
+        col_width = 25.7 * CM / 3
 
         print("表作成中（2行 × 3列）...")
         doc_range = doc_out.Range()
