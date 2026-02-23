@@ -86,18 +86,21 @@ def create_comparison_table(old_path, new_path, comment_path, output_path):
         ps.RightMargin = 12.7 * MM
 
         print("タイトル行挿入中...")
-        # 文書先頭にタイトルを挿入し MS ゴシック 16pt を設定
+        # 文書先頭にタイトルを挿入（参照ファイル準拠: MS ゴシック 16pt 太字 中央揃え）
         doc_out.Range(0, 0).InsertAfter("管理規約　新旧対照表")
         title_para_rng = doc_out.Paragraphs(1).Range
         title_para_rng.Font.Name = "MS ゴシック"
         title_para_rng.Font.Size = 16
+        title_para_rng.Font.Bold = True
+        title_para_rng.ParagraphFormat.Alignment = 1    # wdAlignParagraphCenter
+        title_para_rng.ParagraphFormat.SpaceAfter = 8   # 参照ファイル値
+        title_para_rng.ParagraphFormat.SpaceBefore = 0
+        title_para_rng.ParagraphFormat.LineSpacingRule = 0  # wdLineSpaceSingle
 
-        # 列幅の計算
+        # 列幅の計算（参照ファイル実測値に合わせ右列=92pt）
         # 利用可能幅 = 297mm - 2×12.7mm = 271.6mm
         available_width_pt = (297 - 2 * 12.7) * MM
-        # 右列: 11文字 × 8pt（MS Pゴシック 8pt の全角1文字 = 8pt）
-        right_col_width = 11 * 8
-        # 左列・中列: 残りを均等分割
+        right_col_width = 92                                       # 参照ファイル: 92.15pt
         left_mid_col_width = (available_width_pt - right_col_width) / 2
 
         print("表作成中（2行 × 3列）...")
@@ -116,9 +119,23 @@ def create_comparison_table(old_path, new_path, comment_path, output_path):
         table.Columns(3).Width = right_col_width
 
         print("ヘッダー行設定中...")
+        # テキスト
         table.Cell(1, 1).Range.Text = "現行規約"
         table.Cell(1, 2).Range.Text = "改正案"
         table.Cell(1, 3).Range.Text = "備考"
+        # 書式（参照ファイル準拠: ＭＳ 明朝 10pt・グレー背景・中央/中央/左揃え）
+        HEADER_GRAY = 15132390   # #E6E6E6 (RGB 230,230,230)
+        for col in range(1, 4):
+            cell = table.Cell(1, col)
+            cell.Range.Font.Name = "ＭＳ 明朝"
+            cell.Range.Font.Size = 10
+            cell.Range.Font.Bold = False
+            cell.Shading.BackgroundPatternColor = HEADER_GRAY
+            cell.Range.ParagraphFormat.SpaceBefore = 0
+            cell.Range.ParagraphFormat.SpaceAfter = 0
+        table.Cell(1, 1).Range.ParagraphFormat.Alignment = 1  # Center
+        table.Cell(1, 2).Range.ParagraphFormat.Alignment = 1  # Center
+        table.Cell(1, 3).Range.ParagraphFormat.Alignment = 0  # Left
 
         print(f"旧規約を挿入中: {old_abs}")
         insert_file_into_cell(word, table.Cell(2, 1), old_abs)
@@ -132,16 +149,26 @@ def create_comparison_table(old_path, new_path, comment_path, output_path):
         insert_file_into_cell(word, table.Cell(2, 3), comment_abs)
         print("  → 完了")
 
-        print("右列フォント変更中（MS Pゴシック 8pt）...")
-        comment_rng = table.Cell(2, 3).Range
-        comment_rng.Font.Name = "MS Pゴシック"
-        comment_rng.Font.Size = 8
-
-        print("段落後の間隔を削除中...")
-        # 全セルの全段落に SpaceAfter=0 を設定
-        for row in range(1, 3):
-            for col in range(1, 4):
-                table.Cell(row, col).Range.ParagraphFormat.SpaceAfter = 0
+        print("コンテンツ行の書式設定中...")
+        # 参照ファイル準拠
+        # 左列・中列: ＭＳ 明朝 10pt・行間12pt固定・段落後0pt
+        WD_LINE_SPACE_EXACTLY = 4
+        for col in (1, 2):
+            rng = table.Cell(2, col).Range
+            rng.Font.Name = "ＭＳ 明朝"
+            rng.Font.Size = 10
+            rng.ParagraphFormat.LineSpacingRule = WD_LINE_SPACE_EXACTLY
+            rng.ParagraphFormat.LineSpacing = 12
+            rng.ParagraphFormat.SpaceBefore = 0
+            rng.ParagraphFormat.SpaceAfter = 0
+        # 右列: ＭＳ Ｐゴシック 8pt・行間10pt固定・段落後0pt
+        rng3 = table.Cell(2, 3).Range
+        rng3.Font.Name = "ＭＳ Ｐゴシック"
+        rng3.Font.Size = 8
+        rng3.ParagraphFormat.LineSpacingRule = WD_LINE_SPACE_EXACTLY
+        rng3.ParagraphFormat.LineSpacing = 10
+        rng3.ParagraphFormat.SpaceBefore = 0
+        rng3.ParagraphFormat.SpaceAfter = 0
 
         print(f"保存中: {output_abs}")
         doc_out.SaveAs2(output_abs, FileFormat=WD_FORMAT_XML_DOCUMENT)
