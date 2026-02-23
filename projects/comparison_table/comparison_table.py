@@ -74,31 +74,43 @@ def create_comparison_table(old_path, new_path, comment_path, output_path):
         doc_out = word.Documents.Add()
 
         print("ページ設定中（A4横向き）...")
-        # 1cm = 28.3465pt
-        # ・PaperSize で用紙サイズを指定してから Orientation を変更する
-        # ・CentimetersToPoints() は COM 呼び出しのため手動計算に置き換え
-        CM = 28.3465
+        # 1mm = 2.83465pt (CentimetersToPoints の COM 呼び出しを避け手動計算)
+        MM = 2.83465
 
         ps = doc_out.PageSetup
         ps.PaperSize = 9          # wdPaperA4
         ps.Orientation = WD_ORIENT_LANDSCAPE
-        ps.TopMargin = 2.0 * CM
-        ps.BottomMargin = 2.0 * CM
-        ps.LeftMargin = 2.0 * CM
-        ps.RightMargin = 2.0 * CM
+        ps.TopMargin = 12.7 * MM  # 12.7mm
+        ps.BottomMargin = 12.7 * MM
+        ps.LeftMargin = 12.7 * MM
+        ps.RightMargin = 12.7 * MM
 
-        # 利用可能幅 = 29.7 - 2*2 = 25.7cm を 3 等分
-        col_width = 25.7 * CM / 3
+        print("タイトル行挿入中...")
+        # 文書先頭にタイトルを挿入し MS ゴシック 16pt を設定
+        doc_out.Range(0, 0).InsertAfter("管理規約　新旧対照表")
+        title_para_rng = doc_out.Paragraphs(1).Range
+        title_para_rng.Font.Name = "MS ゴシック"
+        title_para_rng.Font.Size = 16
+
+        # 列幅の計算
+        # 利用可能幅 = 297mm - 2×12.7mm = 271.6mm
+        available_width_pt = (297 - 2 * 12.7) * MM
+        # 右列: 11文字 × 8pt（MS Pゴシック 8pt の全角1文字 = 8pt）
+        right_col_width = 11 * 8
+        # 左列・中列: 残りを均等分割
+        left_mid_col_width = (available_width_pt - right_col_width) / 2
 
         print("表作成中（2行 × 3列）...")
-        doc_range = doc_out.Range()
-        doc_range.Collapse(WD_COLLAPSE_START)
-        table = doc_out.Tables.Add(doc_range, 2, 3)
+        # タイトル段落の末尾位置に表を追加
+        doc_end = doc_out.Range()
+        doc_end.Collapse(0)  # wdCollapseEnd = 0
+        table = doc_out.Tables.Add(doc_end, 2, 3)
         table.AllowAutoFit = False
 
         print("列幅設定中...")
-        for i in range(1, 4):
-            table.Columns(i).Width = col_width
+        table.Columns(1).Width = left_mid_col_width
+        table.Columns(2).Width = left_mid_col_width
+        table.Columns(3).Width = right_col_width
 
         print("ヘッダー行設定中...")
         table.Cell(1, 1).Range.Text = "現行規約"
