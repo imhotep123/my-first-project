@@ -78,7 +78,7 @@ def create_comparison_table(old_path, new_path, comment_path, output_path):
         MM = 2.83465
 
         ps = doc_out.PageSetup
-        ps.PaperSize = 9          # wdPaperA4
+        ps.PaperSize = 7          # wdPaperA4 (環境依存: 参照ファイル実測値)
         ps.Orientation = WD_ORIENT_LANDSCAPE
         ps.TopMargin = 12.7 * MM  # 12.7mm
         ps.BottomMargin = 12.7 * MM
