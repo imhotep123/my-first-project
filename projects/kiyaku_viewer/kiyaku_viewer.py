@@ -318,6 +318,10 @@ class DocPanel(tk.Frame):
         self._sorted_keys:    list[str] = []
         self._current_index:  int = -1
         self._nav_status_cb:  "callable[[str], None] | None" = None  # ステータスバー更新用CB
+        self._file_path:      str | None = None                       # 読み込み済みファイルパス
+        self._editing:        bool = False                            # 編集モード中フラグ
+        self._editor_bar_visible: bool = False                        # エディタバー表示済みフラグ
+        self._edit_state_cb:  "callable[[], None] | None" = None     # 編集状態変更時CB
 
         self._build()
 
@@ -331,9 +335,35 @@ class DocPanel(tk.Frame):
         )
         self._header.pack(fill=tk.X)
 
+        # ── エディタバー（ファイル読み込み後に header の直後へ pack する）──
+        self._editor_frame = tk.Frame(self, bg="#fdf0d0", padx=8, pady=4)
+        # ※ _show_editor_bar() が呼ばれるまで pack しない
+
+        self._btn_edit = tk.Button(
+            self._editor_frame, text="編集", command=self._enter_edit,
+            padx=10, pady=2, bg="#c05010", fg="white", relief=tk.GROOVE,
+            font=("MS Gothic", 10),
+        )
+        self._btn_edit.pack(side=tk.LEFT, padx=2)
+
+        self._btn_save = tk.Button(
+            self._editor_frame, text="保存", command=self._save_doc,
+            padx=10, pady=2, bg="#2a7a4a", fg="white", relief=tk.GROOVE,
+            font=("MS Gothic", 10),
+        )
+        # 編集中のみ pack する
+
+        self._btn_back = tk.Button(
+            self._editor_frame, text="検索に戻る", command=self._back_to_search,
+            padx=10, pady=2, relief=tk.GROOVE,
+            font=("MS Gothic", 10),
+        )
+        # 編集中のみ pack する
+
         # 検索バー
         sf = tk.Frame(self, bg="#ebebeb", padx=8, pady=5)
         sf.pack(fill=tk.X)
+        self._search_frame = sf  # 編集モード時の表示/非表示に使用
 
         tk.Label(sf, text="第", font=("MS Gothic", 11), bg="#ebebeb").pack(side=tk.LEFT)
         self._art_var = tk.StringVar()
@@ -401,9 +431,12 @@ class DocPanel(tk.Frame):
 
     def load_file(self, path: str) -> None:
         """ファイルを解析してパネルをリセット"""
+        if self._editing:
+            self._exit_edit()
         articles = parse_docx(path)
         self.articles        = articles
         self.doc_name        = os.path.splitext(os.path.basename(path))[0]
+        self._file_path      = path
         self._current_key    = None
         self._has_content    = False
         self._sorted_keys    = sorted(articles.keys(), key=_art_sort_key)
@@ -416,6 +449,7 @@ class DocPanel(tk.Frame):
             f"読み込み完了 ({len(articles)} 条文)\n\n"
             "条文番号を入力するか ↓↑ キーで条文を切り替えてください"
         )
+        self._show_editor_bar()
 
     # ── 検索 ──────────────────────────────
 
@@ -579,6 +613,170 @@ class DocPanel(tk.Frame):
         plain = _article_plain_text(content)
         return self.doc_name, self._current_key, plain
 
+    # ── エディタバー表示 ──────────────────
+
+    def _show_editor_bar(self) -> None:
+        """エディタバーを header の直後に一度だけ pack する"""
+        if not self._editor_bar_visible:
+            self._editor_frame.pack(fill=tk.X, after=self._header)
+            self._editor_bar_visible = True
+
+    # ── 編集モード入退 ────────────────────
+
+    @property
+    def is_editing(self) -> bool:
+        return self._editing
+
+    def _enter_edit(self) -> None:
+        """このパネルを編集モードへ切り替える"""
+        if not self._file_path:
+            messagebox.showwarning("エラー", "先にファイルを読み込んでください", parent=self)
+            return
+        full_text = self._load_full_text()
+        # 検索バーを隠す
+        self._search_frame.pack_forget()
+        # テキストウィジェットを編集可能にする
+        self._txt.config(state=tk.NORMAL, bg="#fffff8", cursor="xterm")
+        self._txt.delete("1.0", tk.END)
+        for tag in self._txt.tag_names():
+            if tag != "sel":
+                self._txt.tag_delete(tag)
+        self._txt.insert("1.0", full_text)
+        # ボタンを切り替える
+        self._btn_edit.pack_forget()
+        self._btn_save.pack(side=tk.LEFT, padx=2)
+        self._btn_back.pack(side=tk.LEFT, padx=(2, 8))
+        self._editing = True
+        if self._edit_state_cb:
+            self._edit_state_cb()
+        # 表示していた条文の位置へスクロール
+        if self._current_key:
+            self._txt.after(0, lambda: self._scroll_to_article(self._current_key))
+
+    def _scroll_to_article(self, key: str) -> None:
+        """テキストウィジェット内で key に対応する条文行へスクロールする"""
+        m_key = re.match(r"第(\d+)条(?:の(\d+))?", key)
+        if not m_key:
+            return
+        target_art = m_key.group(1)
+        target_sub = m_key.group(2)  # 枝番なければ None
+
+        content = self._txt.get("1.0", tk.END)
+        for line_no, line in enumerate(content.split("\n"), start=1):
+            m = _ART_RE.match(line)
+            if m:
+                art = normalize_num(m.group("art"))
+                sub = normalize_num(m.group("sub")) if m.group("sub") else None
+                if art == target_art and sub == target_sub:
+                    pos = f"{line_no}.0"
+                    self._txt.see(pos)
+                    self._txt.mark_set(tk.INSERT, pos)
+                    return
+
+    def _exit_edit(self) -> None:
+        """編集モードを終了して読み取り専用に戻す（内部用）"""
+        self._editing = False
+        self._txt.config(state=tk.DISABLED, bg=self._bg_color, cursor="arrow")
+        # 検索バーを復元（エディタバーの直後）
+        self._search_frame.pack(fill=tk.X, after=self._editor_frame)
+        # ボタンを切り替える
+        self._btn_save.pack_forget()
+        self._btn_back.pack_forget()
+        self._btn_edit.pack(side=tk.LEFT, padx=2)
+        if self._edit_state_cb:
+            self._edit_state_cb()
+
+    def _back_to_search(self) -> None:
+        """「検索に戻る」: 保存せずに Viewer モードへ戻る"""
+        self._exit_edit()
+        # 最後に表示していた条文を再描画
+        if self._current_key and self._has_content:
+            self._render_key(self._current_key)
+        elif self.articles:
+            self._placeholder(
+                f"読み込み完了 ({len(self.articles)} 条文)\n\n"
+                "条文番号を入力するか ↓↑ キーで条文を切り替えてください"
+            )
+
+    # ── 保存 ─────────────────────────────
+
+    def _save_doc(self) -> None:
+        """「保存」: 上書き保存 or 別名で保存を選択して保存"""
+        content = self._txt.get("1.0", tk.END).rstrip("\n")
+
+        answer = messagebox.askyesnocancel(
+            "保存方法を選択",
+            f"保存方法を選択してください。\n\n"
+            f"[はい]      上書き保存  ―  {os.path.basename(self._file_path)}\n"
+            f"[いいえ]    別名で保存\n"
+            f"[キャンセル] 保存しない",
+            parent=self,
+        )
+        if answer is None:   # キャンセル
+            return
+
+        if answer:           # はい → 上書き
+            save_path = self._file_path
+        else:                # いいえ → 別名
+            save_path = filedialog.asksaveasfilename(
+                title="別名で保存",
+                initialdir=os.path.dirname(self._file_path),
+                initialfile=os.path.basename(self._file_path),
+                filetypes=[("Word 文書", "*.docx"), ("すべてのファイル", "*.*")],
+                defaultextension=".docx",
+                parent=self,
+            )
+            if not save_path:
+                return
+
+        try:
+            self._write_docx(save_path, content)
+        except Exception as exc:
+            messagebox.showerror("保存エラー", str(exc), parent=self)
+            return
+
+        # 保存成功 → ファイルパスを更新して編集モードを抜ける
+        old_key = self._current_key
+        self._file_path = save_path
+        self._exit_edit()
+
+        # 保存したファイルを再解析
+        try:
+            articles = parse_docx(save_path)
+            self.articles       = articles
+            self.doc_name       = os.path.splitext(os.path.basename(save_path))[0]
+            self._sorted_keys   = sorted(articles.keys(), key=_art_sort_key)
+            self._current_index = -1
+            self._header.config(
+                text=f"{self._base_title}  ―  {os.path.basename(save_path)}"
+            )
+        except Exception:
+            pass  # 再解析に失敗しても保存自体は完了
+
+        messagebox.showinfo("保存完了", f"保存しました:\n{save_path}", parent=self)
+
+        if old_key:
+            self.show_key(old_key)
+        else:
+            self._placeholder(
+                f"保存完了 ({len(self.articles)} 条文)\n\n"
+                "条文番号を入力するか ↓↑ キーで条文を切り替えてください"
+            )
+
+    # ── ファイル I/O ──────────────────────
+
+    def _load_full_text(self) -> str:
+        """docx の全段落をプレーンテキストとして結合して返す"""
+        doc = Document(self._file_path)
+        return "\n".join(para.text for para in doc.paragraphs)
+
+    def _write_docx(self, path: str, text: str) -> None:
+        """テキストを .docx ファイルとして保存（1行 = 1段落）"""
+        doc = Document()
+        for line in text.split("\n"):
+            doc.add_paragraph(line.rstrip("\r"))
+        doc.save(path)
+
 
 # ─────────────────────────────────────────
 #  メインウィンドウ
@@ -591,7 +789,10 @@ class CompareViewer:
         self.root.title("規約比較ビューワー")
         self.root.geometry("1440x880")
         self._build_ui()
-        self.root.bind("<Escape>", lambda _: self._unified_search())
+        # 編集状態変更時のコールバックを各パネルに設定
+        self._panel1._edit_state_cb = self._on_edit_state_changed
+        self._panel2._edit_state_cb = self._on_edit_state_changed
+        self.root.bind("<Escape>", lambda _: self._on_escape())
         self.root.bind("<Down>",   lambda _: self._navigate(+1))
         self.root.bind("<Up>",     lambda _: self._navigate(-1))
 
@@ -609,8 +810,9 @@ class CompareViewer:
 
         tk.Frame(bar, width=1, bg="#bbb").pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=2)
 
-        _btn("両パネル一括検索  [ESC]", self._unified_search,
-             bg="#3572b8", fg="white").pack(side=tk.LEFT, padx=3)
+        self._unified_btn = _btn("両パネル一括検索  [ESC]", self._unified_search,
+                                  bg="#3572b8", fg="white")
+        self._unified_btn.pack(side=tk.LEFT, padx=3)
 
         tk.Frame(bar, width=1, bg="#bbb").pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=2)
 
@@ -642,6 +844,26 @@ class CompareViewer:
         sb.pack_propagate(False)
         tk.Label(sb, textvariable=self._status, bg="#d0d0d0",
                  font=F_SMALL, anchor=tk.W).pack(side=tk.LEFT, padx=8, pady=2)
+
+    # ── 編集状態管理 ──────────────────────
+
+    def _any_editing(self) -> bool:
+        """いずれかのパネルが編集中かどうかを返す"""
+        return self._panel1.is_editing or self._panel2.is_editing
+
+    def _on_edit_state_changed(self) -> None:
+        """パネルの編集状態が変わったときに呼ばれる"""
+        editing = self._any_editing()
+        state = tk.DISABLED if editing else tk.NORMAL
+        self._unified_btn.config(state=state)
+        if editing:
+            self._status.set("編集モード中 — 検索・ナビゲーション機能は抑止されています")
+
+    def _on_escape(self) -> None:
+        """ESC キー: 編集中は無視し、それ以外は一括検索を実行"""
+        if self._any_editing():
+            return
+        self._unified_search()
 
     # ── ファイル読み込み ────────────────
 
@@ -679,6 +901,8 @@ class CompareViewer:
 
     def _navigate(self, delta: int) -> None:
         """↓/↑ キーで両パネルの条文を移動。Entry にフォーカスがある場合はスキップ。"""
+        if self._any_editing():
+            return  # 編集モード中はナビゲーションを抑止
         focused = self.root.focus_get()
         if isinstance(focused, tk.Entry):
             return  # 入力フィールド操作中は矢印キーを横取りしない
@@ -695,6 +919,8 @@ class CompareViewer:
 
     def _unified_search(self) -> None:
         """ESC キー: 両パネルに同じ条文番号で検索"""
+        if self._any_editing():
+            return  # 編集モード中は検索を抑止
         if not self._panel1.articles and not self._panel2.articles:
             messagebox.showinfo("お知らせ", "先にファイルを読み込んでください")
             return
