@@ -4,15 +4,25 @@ kiyaku_viewer.spec
 PyInstaller ビルド設定ファイル
 
 使い方:
-    pyinstaller kiyaku_viewer.spec
+    pyinstaller kiyaku_viewer.spec --clean --noconfirm
 
 出力:
     dist/kiyaku_viewer/kiyaku_viewer.exe  (--onedir)
+    dist/kiyaku_viewer/_internal/         (依存DLL・ライブラリ)
 """
 
 import os
+import sys
+import glob
 
 spec_dir = os.path.dirname(os.path.abspath(SPEC))
+
+# ── Python DLL を明示的に同梱 ──────────────────────────────────────
+# Python 3.12+ では python3XX.dll が自動収集されないことがある。
+# 実行中の Python インタープリタのディレクトリから python3*.dll を探して同梱する。
+_python_dir = os.path.dirname(sys.executable)
+_py_dlls    = glob.glob(os.path.join(_python_dir, 'python3*.dll'))
+_binaries   = [(dll, '.') for dll in _py_dlls]
 
 block_cipher = None
 
@@ -21,7 +31,7 @@ a = Analysis(
 
     pathex=[spec_dir],
 
-    binaries=[],
+    binaries=_binaries,   # Python DLL を明示的に含める
 
     datas=[],
 
